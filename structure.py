@@ -14,7 +14,6 @@ class slot_machine:
     def reset(self, prob):
         self.prob = prob
 
-
 class env:
     def __init__(self, tab_prob):
         self.slot_machines = [slot_machine(prob) for prob in tab_prob]
@@ -28,7 +27,6 @@ class env:
     def play(self, index):
         return self.slot_machines[index].pull()
     
-
 class agent:
     def __init__(self, env):
         self.env = env
@@ -46,7 +44,6 @@ class agent:
     def get_history(self):
         return self.history
     
-
 class epsilon_greedy_agent(agent):
     def __init__(self, env, epsilon):
         super().__init__(env)
@@ -64,7 +61,6 @@ class epsilon_greedy_agent(agent):
         self.action_counts[action] += 1
         self.q_values[action] += (reward - self.q_values[action]) / self.action_counts[action]
 
-
 class ucb_agent(agent):
     def __init__(self, env, c):
         super().__init__(env)
@@ -80,7 +76,6 @@ class ucb_agent(agent):
         self.action_counts[action] += 1
         self.q_values[action] += (reward - self.q_values[action]) / self.action_counts[action]
 
-
 class thompson_sampling_agent(agent):
     def __init__(self, env):
         super().__init__(env)
@@ -95,7 +90,6 @@ class thompson_sampling_agent(agent):
         r = np.random.rand() < reward      # reward ∈ [0,1]
         self.alpha[action] += r
         self.beta[action] += 1 - r
-
 
 class EXP3_agent(agent):
     def __init__(self, env, gamma=0.1):
@@ -115,7 +109,6 @@ class EXP3_agent(agent):
         self.weights /= np.max(self.weights)
         self.probs = (1 - self.gamma) * self.weights / np.sum(self.weights) + self.gamma / k
 
-
 class scenario():
     def __init__(self, env, agent, steps):
         self.env = env
@@ -127,6 +120,9 @@ class scenario():
             action = self.agent.act()
             reward = self.env.play(action)
             self.agent.update(action, reward)
+            self.agent.history.append((action, reward))
+            self.agent.total_reward += reward
+            self.agent.current_step += 1
         return self.agent.get_history()
     
     def change_env(self, new_env):
@@ -137,7 +133,6 @@ class scenario():
         optimal_reward = max([sm.expected_value for sm in self.env.slot_machines])
         regret = [optimal_reward - reward for _, reward in self.agent.get_history()]
         return np.cumsum(regret)
-
 
 class results():
     def __init__(self, history, regret):
@@ -157,12 +152,16 @@ class results():
     def cumulative_regret(self):
         return np.cumsum(self.regret)
 
-scenario1 = scenario(env([stats.norm(loc=0, scale=1), stats.norm(loc=1, scale=1), stats.norm(loc=2, scale=1)]), epsilon_greedy_agent(env([stats.norm(loc=0, scale=1), stats.norm(loc=1, scale=1), stats.norm(loc=2, scale=1)]), epsilon=0.1), steps=1000)
+scenario1 = scenario(env([stats.norm(loc=0, scale=1), 
+                          stats.norm(loc=1, scale=1), 
+                          stats.norm(loc=2, scale=1)]), 
+                          epsilon_greedy_agent(env([stats.norm(loc=0, scale=1), 
+                                                    stats.norm(loc=1, scale=1), 
+                                                    stats.norm(loc=2, scale=1)]), 
+                                                    epsilon=0.1), steps=1000)
+
 history1 = scenario1.run()
-
-
-# Example usage
-slot_machines = [slot_machine(np.random.normal) for _ in range(10)]
-print(slot_machines[1].pull(3))
-print(slot_machines[1].pull(10))
-print(slot_machines[1].pull(22))
+print("Total reward:", results(history1, scenario1.regret_function()).total_reward())
+print("Average reward:", results(history1, scenario1.regret_function()).average_reward())
+print("Action distribution:", results(history1, scenario1.regret_function()).action_distribution())
+print("Expected values of slot machines:", [sm.expected_value for sm in scenario1.env.slot_machines])
