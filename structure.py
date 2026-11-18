@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import stats
+import matplotlib.pyplot as plt
 np.random.seed(42)
 
 
@@ -33,6 +34,9 @@ class agent:
         self.total_reward = 0
         self.current_step = 0
         self.history = []
+
+    def new_env(self, env):
+        self.env = env
 
     def act(self, action):
         reward = self.env.play(action)
@@ -110,15 +114,14 @@ class EXP3_agent(agent):
         self.probs = (1 - self.gamma) * self.weights / np.sum(self.weights) + self.gamma / k
 
 class scenario():
-    def __init__(self, env, agent, steps):
-        self.env = env
+    def __init__(self, agent, steps):
         self.agent = agent
         self.steps = steps
 
     def run(self):
         for _ in range(self.steps):
             action = self.agent.act()
-            reward = self.env.play(action)
+            reward = self.agent.env.play(action)
             self.agent.update(action, reward)
             self.agent.history.append((action, reward))
             self.agent.total_reward += reward
@@ -130,11 +133,12 @@ class scenario():
         self.agent.env = new_env
 
     def regret_function(self):
-        optimal_reward = max([sm.expected_value for sm in self.env.slot_machines])
+        optimal_reward = max([sm.expected_value for sm in self.agent.env.slot_machines])
         regret = [optimal_reward - reward for _, reward in self.agent.get_history()]
         return np.cumsum(regret)
 
 class results():
+    
     def __init__(self, history, regret):
         self.history = history
         self.regret = regret
@@ -149,19 +153,47 @@ class results():
         actions = [action for action, _ in self.history]
         return np.bincount(actions) / len(actions)
 
-    def cumulative_regret(self):
-        return np.cumsum(self.regret)
+    def fregret(self):
+        return self.regret
+    
+def show_results(history, regret):
+    print("Total reward:", results(history, regret).total_reward())
+    print("Average reward:", results(history, regret).average_reward())
+    print("Action distribution:", results(history, regret).action_distribution())
 
-scenario1 = scenario(env([stats.norm(loc=0, scale=1), 
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    plt.bar(range(len(results(history, regret).action_distribution())), results(history, regret).action_distribution())
+    plt.title("Action Distribution")
+    plt.xlabel("Action")
+    plt.ylabel("Proportion")
+    plt.subplot(1, 2, 2)
+    plt.plot(results(history, regret).fregret())
+    plt.title("Regret")
+    plt.xlabel("Steps")
+    plt.ylabel("Regret")
+    plt.show()
+
+
+env1 = env([stats.norm(loc=0, scale=1), 
                           stats.norm(loc=1, scale=1), 
-                          stats.norm(loc=2, scale=1)]), 
-                          epsilon_greedy_agent(env([stats.norm(loc=0, scale=1), 
-                                                    stats.norm(loc=1, scale=1), 
-                                                    stats.norm(loc=2, scale=1)]), 
-                                                    epsilon=0.1), steps=1000)
-
+                          stats.norm(loc=2, scale=1)])
+scenario1 = scenario(epsilon_greedy_agent(env1, epsilon=0.1), steps=1000)
 history1 = scenario1.run()
-print("Total reward:", results(history1, scenario1.regret_function()).total_reward())
-print("Average reward:", results(history1, scenario1.regret_function()).average_reward())
-print("Action distribution:", results(history1, scenario1.regret_function()).action_distribution())
-print("Expected values of slot machines:", [sm.expected_value for sm in scenario1.env.slot_machines])
+show_results(history1, scenario1.regret_function())
+
+env2 = env([stats.expon(loc=0, scale=1), 
+            stats.norm(loc=1, scale=1),
+            stats.binom(n=2, p=0.5)])
+
+scenario2 = scenario(epsilon_greedy_agent(env2, epsilon=0.1), steps=1000)
+history2 = scenario2.run()
+show_results(history2, scenario2.regret_function())
+
+scenario3 = scenario(epsilon_greedy_agent(env2, epsilon=0.05), steps=1000)
+history3 = scenario3.run()
+show_results(history3, scenario3.regret_function())
+
+scenario4 = scenario(epsilon_greedy_agent(env2, epsilon=0.01), steps=1000)
+history4 = scenario4.run()
+show_results(history4, scenario4.regret_function())
