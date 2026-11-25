@@ -13,7 +13,7 @@ class slot_machine:
         return max(0, round(self.prob.rvs(), 2))
 
     def reset(self, prob):
-        self.prob = prob
+        self.__init__(prob)
 
 class env:
     def __init__(self, tab_prob):
@@ -34,16 +34,12 @@ class agent:
         self.total_reward = 0
         self.current_step = 0
         self.history = []
+        # do sprawdzenia wpływu
+        self.max_expected_value = 10
 
     def new_env(self, env):
         self.env = env
-
-    def act(self, action):
-        reward = self.env.play(action)
-        self.total_reward += reward
-        self.current_step += 1
-        self.history.append((action, reward))
-        return reward
+        self.max_expected_value = 10
 
     def get_history(self):
         return self.history
@@ -73,12 +69,17 @@ class ucb_agent(agent):
         self.q_values = np.zeros(len(env.slot_machines))
 
     def act(self):
-        ucb_values = self.q_values + self.c * np.sqrt(np.log(self.current_step + 1) / (self.action_counts + 1e-5))
+        untried = np.flatnonzero(self.action_counts == 0)
+        if untried.size > 0:
+            return untried[0]
+        t = self.action_counts.sum()
+        ucb_values = self.q_values + self.c * np.sqrt(np.log(t) / self.action_counts)
         return np.argmax(ucb_values)
 
     def update(self, action, reward):
+        r_scaled = min(reward, self.max_expected_value) / self.max_expected_value
         self.action_counts[action] += 1
-        self.q_values[action] += (reward - self.q_values[action]) / self.action_counts[action]
+        self.q_values[action] += (r_scaled - self.q_values[action]) / self.action_counts[action]
 
 class thompson_sampling_agent(agent):
     def __init__(self, env):
@@ -91,9 +92,9 @@ class thompson_sampling_agent(agent):
         return np.argmax(sampled_values)
 
     def update(self, action, reward):
-        r = np.random.rand() < reward      # reward ∈ [0,1]
-        self.alpha[action] += r
-        self.beta[action] += 1 - r
+        r_scaled = min(reward, self.max_expected_value) / self.max_expected_value
+        self.alpha[action] += r_scaled
+        self.beta[action] += 1 - r_scaled
 
 class EXP3_agent(agent):
     def __init__(self, env, gamma=0.1):
@@ -107,8 +108,9 @@ class EXP3_agent(agent):
         return np.random.choice(k, p=self.probs)
 
     def update(self, action, reward):
+        r_scaled = min(reward, self.max_expected_value) / self.max_expected_value
         k = len(self.env.slot_machines)
-        estimated_reward = reward / self.probs[action]
+        estimated_reward = r_scaled / self.probs[action]
         self.weights[action] *= np.exp(self.gamma * estimated_reward / k)
         self.weights /= np.max(self.weights)
         self.probs = (1 - self.gamma) * self.weights / np.sum(self.weights) + self.gamma / k
@@ -133,8 +135,9 @@ class scenario():
         self.agent.env = new_env
 
     def regret_function(self):
-        optimal_reward = max([sm.expected_value for sm in self.agent.env.slot_machines])
-        regret = [optimal_reward - reward for _, reward in self.agent.get_history()]
+        expected_values = [sm.expected_value for sm in self.agent.env.slot_machines]
+        optimal_reward = max(expected_values)
+        regret = [optimal_reward - expected_values[action] for action, _ in self.agent.get_history()]
         return np.cumsum(regret)
 
 class results():
@@ -180,7 +183,7 @@ env1 = env([stats.norm(loc=0, scale=1),
                           stats.norm(loc=2, scale=1)])
 scenario1 = scenario(epsilon_greedy_agent(env1, epsilon=0.1), steps=1000)
 history1 = scenario1.run()
-show_results(history1, scenario1.regret_function())
+#show_results(history1, scenario1.regret_function())
 
 env2 = env([stats.expon(loc=0, scale=1), 
             stats.norm(loc=1, scale=1),
@@ -188,12 +191,75 @@ env2 = env([stats.expon(loc=0, scale=1),
 
 scenario2 = scenario(epsilon_greedy_agent(env2, epsilon=0.1), steps=1000)
 history2 = scenario2.run()
-show_results(history2, scenario2.regret_function())
+#how_results(history2, scenario2.regret_function())
 
 scenario3 = scenario(epsilon_greedy_agent(env2, epsilon=0.05), steps=1000)
 history3 = scenario3.run()
-show_results(history3, scenario3.regret_function())
+#show_results(history3, scenario3.regret_function())
 
 scenario4 = scenario(epsilon_greedy_agent(env2, epsilon=0.01), steps=1000)
 history4 = scenario4.run()
-show_results(history4, scenario4.regret_function())
+#show_results(history4, scenario4.regret_function())
+
+
+def run_experiment(make_agent, env, steps, M, title=None, seed=None):
+    if seed is not None:
+        np.random.seed(seed)
+
+    all_results = []
+    for _ in range(M):
+        sc = scenario(make_agent(env), steps)   # świeży agent w każdym powtórzeniu
+        history = sc.run()
+        all_results.append(results(history, sc.regret_function()))
+
+    show_experiment(all_results, len(env.slot_machines), title)
+    return all_results
+
+
+def show_experiment(all_results, K, title=None):
+    M = len(all_results)
+    steps = len(all_results[0].history)
+
+    # liczba użyć maszyn: action_distribution() * steps
+    usage = np.zeros((M, K))
+    for m, r in enumerate(all_results):
+        dist = r.action_distribution()
+        usage[m, :len(dist)] = dist * steps
+
+    regrets = np.array([r.fregret() for r in all_results])
+
+    print("Średni total reward:", np.mean([r.total_reward() for r in all_results]))
+    print("Średni average reward:", np.mean([r.average_reward() for r in all_results]))
+
+    plt.figure(figsize=(12, 6))
+    if title:
+        plt.suptitle(title)
+
+    plt.subplot(1, 2, 1)
+    plt.boxplot([usage[:, k] for k in range(K)])
+    plt.xticks(range(1, K + 1), [f"Maszyna {k}" for k in range(K)])
+    plt.title(f"Użycie maszyn ({M} powtórzeń)")
+    plt.xlabel("Action")
+    plt.ylabel("Liczba użyć")
+
+    plt.subplot(1, 2, 2)
+    alpha = min(0.5, max(0.02, 5 / M))
+    plt.plot(regrets.T, color="tab:blue", alpha=alpha, lw=0.8)
+    plt.plot(regrets.mean(axis=0), color="black", lw=2, label="średnia")
+    plt.title(f"Regret ({M} powtórzeń)")
+    plt.xlabel("Steps")
+    plt.ylabel("Regret")
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+
+#res = run_experiment(lambda e: ucb_agent(e, 2), env2, steps=10000, M=10,
+#                     title="UCB, c=2, env2", seed=42)
+
+res = run_experiment(lambda e: EXP3_agent(e, 0.2), env2, steps=10000, M=10,
+                     title="EXP3, gamma=0.2, env2", seed=42)
+
+res = run_experiment(lambda e: thompson_sampling_agent(e), env2, steps=10000, M=10,
+                     title="Thompson Sampling, _, env2", seed=42)
