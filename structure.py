@@ -81,20 +81,20 @@ class ucb_agent(agent):
         self.action_counts[action] += 1
         self.q_values[action] += (r_scaled - self.q_values[action]) / self.action_counts[action]
 
-class thompson_sampling_agent(agent):
-    def __init__(self, env):
-        super().__init__(env)
-        self.alpha = np.ones(len(env.slot_machines))
-        self.beta = np.ones(len(env.slot_machines))
+# class thompson_sampling_agent(agent):
+#     def __init__(self, env):
+#         super().__init__(env)
+#         self.alpha = np.ones(len(env.slot_machines))
+#         self.beta = np.ones(len(env.slot_machines))
 
-    def act(self):
-        sampled_values = np.random.beta(self.alpha, self.beta)
-        return np.argmax(sampled_values)
+#     def act(self):
+#         sampled_values = np.random.beta(self.alpha, self.beta)
+#         return np.argmax(sampled_values)
 
-    def update(self, action, reward):
-        r_scaled = min(reward, self.max_expected_value) / self.max_expected_value
-        self.alpha[action] += r_scaled
-        self.beta[action] += 1 - r_scaled
+#     def update(self, action, reward):
+#         r_scaled = min(reward, self.max_expected_value) / self.max_expected_value
+#         self.alpha[action] += r_scaled
+#         self.beta[action] += 1 - r_scaled
 
 class EXP3_agent(agent):
     def __init__(self, env, gamma=0.1):
@@ -179,36 +179,35 @@ def show_results(history, regret):
 
 
 env1 = env([stats.norm(loc=0, scale=1), 
-                          stats.norm(loc=1, scale=1), 
-                          stats.norm(loc=2, scale=1)])
-scenario1 = scenario(epsilon_greedy_agent(env1, epsilon=0.1), steps=1000)
-history1 = scenario1.run()
-#show_results(history1, scenario1.regret_function())
+            stats.norm(loc=1, scale=1), 
+            stats.norm(loc=2, scale=1)])
 
 env2 = env([stats.expon(loc=0, scale=1), 
             stats.norm(loc=1, scale=1),
             stats.binom(n=2, p=0.5)])
 
-scenario2 = scenario(epsilon_greedy_agent(env2, epsilon=0.1), steps=1000)
-history2 = scenario2.run()
-#how_results(history2, scenario2.regret_function())
+# scenario1 = scenario(epsilon_greedy_agent(env1, epsilon=0.1), steps=1000)
+# history1 = scenario1.run()
+# #show_results(history1, scenario1.regret_function())
 
-scenario3 = scenario(epsilon_greedy_agent(env2, epsilon=0.05), steps=1000)
-history3 = scenario3.run()
-#show_results(history3, scenario3.regret_function())
+# scenario2 = scenario(epsilon_greedy_agent(env2, epsilon=0.1), steps=1000)
+# history2 = scenario2.run()
+# #how_results(history2, scenario2.regret_function())
 
-scenario4 = scenario(epsilon_greedy_agent(env2, epsilon=0.01), steps=1000)
-history4 = scenario4.run()
-#show_results(history4, scenario4.regret_function())
+# scenario3 = scenario(epsilon_greedy_agent(env2, epsilon=0.05), steps=1000)
+# history3 = scenario3.run()
+# #show_results(history3, scenario3.regret_function())
+
+# scenario4 = scenario(epsilon_greedy_agent(env2, epsilon=0.01), steps=1000)
+# history4 = scenario4.run()
+# #show_results(history4, scenario4.regret_function())
 
 
 def run_experiment(make_agent, env, steps, M, title=None, seed=None):
-    if seed is not None:
-        np.random.seed(seed)
 
     all_results = []
     for _ in range(M):
-        sc = scenario(make_agent(env), steps)   # świeży agent w każdym powtórzeniu
+        sc = scenario(make_agent(env), steps)
         history = sc.run()
         all_results.append(results(history, sc.regret_function()))
 
@@ -245,7 +244,7 @@ def show_experiment(all_results, K, title=None):
     plt.subplot(1, 2, 2)
     alpha = min(0.5, max(0.02, 5 / M))
     plt.plot(regrets.T, color="tab:blue", alpha=alpha, lw=0.8)
-    plt.plot(regrets.mean(axis=0), color="black", lw=2, label="średnia")
+    plt.plot(regrets.mean(axis=0), color="black", lw=1, label="średnia")
     plt.title(f"Regret ({M} powtórzeń)")
     plt.xlabel("Steps")
     plt.ylabel("Regret")
@@ -258,8 +257,8 @@ def show_experiment(all_results, K, title=None):
 #res = run_experiment(lambda e: ucb_agent(e, 2), env2, steps=10000, M=10,
 #                     title="UCB, c=2, env2", seed=42)
 
-res = run_experiment(lambda e: EXP3_agent(e, 0.2), env2, steps=10000, M=10,
+res = run_experiment(lambda e: EXP3_agent(e, 0.2), env2, steps=10000, M=1000,
                      title="EXP3, gamma=0.2, env2", seed=42)
 
-res = run_experiment(lambda e: thompson_sampling_agent(e), env2, steps=10000, M=10,
-                     title="Thompson Sampling, _, env2", seed=42)
+res = run_experiment(lambda e: epsilon_greedy_agent(e, 0.2), env2, steps=10000, M=1000,
+                     title="Epsilon-Greedy, epsilon=0.2, env2", seed=42)
